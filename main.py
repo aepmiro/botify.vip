@@ -1,15 +1,45 @@
 import discord
 import asyncio
 import os
+import sys
+import requests
 from colorama import Fore, init
 
-# Initialize colorama for Windows compatibility
+# Initialize colorama
 init(autoreset=True)
 
-# ASCII Banner and Menu
+# ── Auto-update Configuration ──
+VERSION_URL = "https://raw.githubusercontent.com/aepmiro/botify.vip/main/version.txt"
+SCRIPT_URL = "https://raw.githubusercontent.com/aepmiro/botify.vip/main/main.py"
+LOCAL_VERSION = "1.0.0"  # Match this to your current version
+
+def check_for_updates():
+    try:
+        res = requests.get(VERSION_URL)
+        latest_version = res.text.strip()
+
+        if latest_version != LOCAL_VERSION:
+            print(Fore.YELLOW + f"\n🔄 Update available: {latest_version}")
+            download_update()
+        else:
+            print(Fore.GREEN + f"\n✅ Running version {LOCAL_VERSION} — Up to date.")
+    except Exception as e:
+        print(Fore.RED + f"\n⚠️ Could not check for updates: {e}")
+
+def download_update():
+    try:
+        res = requests.get(SCRIPT_URL)
+        with open("main.py", "w", encoding="utf-8") as f:
+            f.write(res.text)
+        print(Fore.GREEN + "✅ Update downloaded. Restarting...")
+        os.execv(sys.executable, ['python'] + sys.argv)
+    except Exception as e:
+        print(Fore.RED + f"❌ Update failed: {e}")
+
+# ── Banner & Menu ──
 def show_banner():
-    os.system("cls" if os.name == "nt" else "clear")  # Clears screen before displaying banner
-    banner = """
+    os.system("cls" if os.name == "nt" else "clear")
+    print(Fore.RED + r"""
  ________  ________  _________  ___  ________ ___    ___ 
 |\   __  \|\   __  \|\___   ___\\  \|\  _____\\  \  /  /|
 \ \  \|\ /\ \  \|\  \|___ \  \_\ \  \ \  \__/\ \  \/  / /
@@ -18,67 +48,50 @@ def show_banner():
    \ \_______\ \_______\   \ \__\ \ \__\ \__\__/  / /     
     \|_______|\|_______|    \|__|  \|__|\|__|\___/ /      
                                             \|___|/       
-    """
-    print(Fore.RED + banner)  # Menu is now fully red
+    """)
     print(Fore.RED + "[01] Send Messages")
     print(Fore.RED + "[02] Create Channels")
     print(Fore.RED + "[03] Delete Channels")
     print(Fore.RED + "[X] Exit")
-    
-    choice = input(Fore.RED + "\nChoose an option: ").lower()  # Simple prompt without listing inputs
-    
-    os.system("cls" if os.name == "nt" else "clear")  # Clears screen AFTER selection
+    choice = input(Fore.RED + "\nChoose an option: ").lower()
+    os.system("cls" if os.name == "nt" else "clear")
     return choice
 
-async def send_messages(token, guild_id, message, spam, delay_ms, count):
+# ── Core Features ──
+
+async def send_messages(token, guild_id, message, count):
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
 
     @client.event
     async def on_ready():
-        os.system("cls" if os.name == "nt" else "clear")  # Clears screen before first log
         guild = client.get_guild(guild_id)
-
         if guild:
-            tasks = []  # Store async tasks for simultaneous execution
-            for channel in guild.text_channels:  # Get all text channels
-                for _ in range(count):
-                    tasks.append(channel.send(message))  # Queue message sends
-            
+            tasks = [channel.send(message) for channel in guild.text_channels for _ in range(count)]
             try:
-                await asyncio.gather(*tasks)  # Execute all sends simultaneously
-                print(Fore.GREEN + f"Messages sent across all channels in {guild.name}! {token}")
-            except discord.errors.HTTPException as e:
-                if "rate-limited" in str(e).lower():
-                    print(Fore.RED + f"You are being rate-limited. {token}")
-                else:
-                    print(Fore.RED + f"Message failed! {token} - Error: {e}")
-
+                await asyncio.gather(*tasks)
+                print(Fore.GREEN + f"✅ Sent message to all channels in {guild.name} — Token: {token}")
+            except Exception as e:
+                print(Fore.RED + f"❌ Error sending messages — {e}")
         await client.close()
 
     await client.start(token)
 
-async def create_channels(token, guild_id, channel_name, count):
+async def create_channels(token, guild_id, name, count):
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
 
     @client.event
     async def on_ready():
-        os.system("cls" if os.name == "nt" else "clear")  # Clears screen before first log
         guild = client.get_guild(guild_id)
-
         if guild:
             for _ in range(count):
                 try:
-                    await guild.create_text_channel(channel_name)
-                    print(Fore.GREEN + f"Channel '{channel_name}' created successfully! {token}")
-                except discord.errors.Forbidden:
-                    print(Fore.RED + f"Bot lacks permission to create channels in the server. {token}")
+                    await guild.create_text_channel(name)
+                    print(Fore.GREEN + f"✅ Created channel: {name} — Token: {token}")
                 except Exception as e:
-                    print(Fore.RED + f"Failed to create channel! {token} - Error: {e}")
-
-                await asyncio.sleep(0.15)  # 150 milliseconds delay
-
+                    print(Fore.RED + f"❌ Could not create channel — {e}")
+                await asyncio.sleep(0.2)
         await client.close()
 
     await client.start(token)
@@ -89,82 +102,57 @@ async def delete_channels(token, guild_id):
 
     @client.event
     async def on_ready():
-        os.system("cls" if os.name == "nt" else "clear")  # Clears screen before first log
         guild = client.get_guild(guild_id)
-
         if guild:
-            tasks = []  # Store tasks to delete channels simultaneously
-            for channel in guild.text_channels:  # Get all text channels
-                tasks.append(channel.delete())
-
+            tasks = [channel.delete() for channel in guild.text_channels]
             try:
-                await asyncio.gather(*tasks)  # Execute all deletions at once
-                print(Fore.GREEN + f"All channels deleted in {guild.name}! {token}")
-            except discord.errors.Forbidden:
-                print(Fore.RED + f"Bot lacks permission to delete channels in the server. {token}")
+                await asyncio.gather(*tasks)
+                print(Fore.GREEN + f"✅ Deleted all text channels in {guild.name} — Token: {token}")
             except Exception as e:
-                print(Fore.RED + f"Failed to delete channels! {token} - Error: {e}")
-
+                print(Fore.RED + f"❌ Error deleting channels — {e}")
         await client.close()
 
     await client.start(token)
 
+# ── Main Loop ──
+
 async def main():
+    check_for_updates()
+
     while True:
-        choice = show_banner()  # Display menu
+        choice = show_banner()
 
-        if choice == "1":  # Send Messages
+        if choice == "1":
             with open("tokens.txt", "r") as f:
-                tokens = [line.strip() for line in f.readlines()]
-
-            guild_id = int(input(Fore.RED + "Enter the Server (Guild) ID: "))  # Only server ID is needed!
+                tokens = [line.strip() for line in f]
+            guild_id = int(input(Fore.RED + "Enter Server ID: "))
             message = input(Fore.RED + "Enter your message: ")
-            spam = input(Fore.RED + "Do you want to spam the message? (y/n): ")
-
-            delay_ms = 1000  # Default delay in milliseconds
-            count = 1  # Default message count
-
-            if spam.lower() == "y":
-                count = int(input(Fore.RED + "How many times should the message be sent? "))
-                delay_ms = int(input(Fore.RED + "Enter delay between messages (in milliseconds): "))
-
+            count = int(input(Fore.RED + "Send how many times per channel? "))
             for token in tokens:
-                try:
-                    await send_messages(token, guild_id, message, spam, delay_ms, count)
-                except Exception as e:
-                    print(f"Error with token {token}: {e}")
+                await send_messages(token, guild_id, message, count)
 
-        elif choice == "2":  # Create Channels
+        elif choice == "2":
             with open("tokens.txt", "r") as f:
-                tokens = [line.strip() for line in f.readlines()]
-
-            guild_id = int(input(Fore.RED + "Enter the Server (Guild) ID: "))
-            channel_name = input(Fore.RED + "Enter the channel name: ")
-            count = int(input(Fore.RED + "How many channels should be created? "))
-
+                tokens = [line.strip() for line in f]
+            guild_id = int(input(Fore.RED + "Enter Server ID: "))
+            name = input(Fore.RED + "Enter channel name: ")
+            count = int(input(Fore.RED + "How many channels to create? "))
             for token in tokens:
-                try:
-                    await create_channels(token, guild_id, channel_name, count)
-                except Exception as e:
-                    print(f"Error with token {token}: {e}")
+                await create_channels(token, guild_id, name, count)
 
-        elif choice == "3":  # Delete Channels
+        elif choice == "3":
             with open("tokens.txt", "r") as f:
-                tokens = [line.strip() for line in f.readlines()]
-
-            guild_id = int(input(Fore.RED + "Enter the Server (Guild) ID: "))
-
+                tokens = [line.strip() for line in f]
+            guild_id = int(input(Fore.RED + "Enter Server ID: "))
             for token in tokens:
-                try:
-                    await delete_channels(token, guild_id)
-                except Exception as e:
-                    print(f"Error with token {token}: {e}")
+                await delete_channels(token, guild_id)
 
-        elif choice == "x":  # Exit program
-            print(Fore.RED + "Exiting program...")
-            break  # Stop the loop
+        elif choice == "x":
+            print(Fore.RED + "Exiting...")
+            break
 
         else:
-            print(Fore.RED + "This is not a valid choice")  # Error message for invalid input
+            print(Fore.RED + "This is not a valid choice")
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
